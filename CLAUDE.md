@@ -1,12 +1,13 @@
 # Twitter Bookmarks Pipeline — Project Memory
 
 ## What This Is
-A pipeline that fetches X (Twitter) bookmarks, syncs them to Notion, and classifies them into workflow routes for automated downstream actions.
+A pipeline that fetches X (Twitter) bookmarks, syncs them to Notion, classifies into workflow routes via Claude API, and routes to destination databases.
 
-## Status: **Complete & Operational**
+## Status: **Complete & Operational (Track 1 Done)**
 - Deployed on Hetzner VPS
 - Cron running daily at 7 AM UTC
-- 34 bookmarks synced to Notion (initial run)
+- Full pipeline: fetch → sync → classify → route
+- 20 bookmarks classified and routed (first run)
 
 ## Key Files
 
@@ -15,14 +16,24 @@ A pipeline that fetches X (Twitter) bookmarks, syncs them to Notion, and classif
 |------|---------|
 | `fetch-twitter-bookmarks.sh` | OAuth2 fetch, token rotation, date filter |
 | `bookmarks-to-notion.sh` | JSON → Notion sync with deduplication |
+| `classify-and-route.sh` | Claude API classification + DB routing |
 | `get-twitter-oauth-refresh-token.sh` | One-time OAuth setup |
 | `run-with-openclaw-env.sh` | Env loader for cron |
 
-### Notion
-- **Database:** Twitter Insights
-- **Database ID:** `32d7800891008191b853d73aea132065`
-- **Fields:** 18 total including workflow classification fields
-- **Link:** https://www.notion.so/akashkedia/32d7800891008191b853d73aea132065
+### Notion Databases
+
+**Source:**
+| Database | ID | Purpose |
+|----------|-----|---------|
+| Twitter Insights | `32d7800891008191b853d73aea132065` | All bookmarks land here first |
+
+**Destinations (auto-routed):**
+| Database | ID | Routes |
+|----------|-----|--------|
+| Lyra Backlog | `33a780089100812282c7c5ead53149` | `lyra_capability` |
+| Claude Setup Ideas | `33a7800891008197bad5d1a53afe8efa` | `work_/personal_claude_setup` |
+| Content Ideas | `27fc8e00643a4b9390f7ce8b9a345c62` | `content_create` |
+| Tool Eval Tracker | `33a7800891008116b664f18dac2a0e24` | `tool_eval` |
 
 ### GitHub
 - **Public repo:** https://github.com/ahkedia/twitter-bookmarks-pipeline
@@ -35,15 +46,24 @@ TWITTER_CLIENT_ID="..."
 TWITTER_CLIENT_SECRET="..."
 TWITTER_REFRESH_TOKEN="..."  # Auto-rotates on each use
 TWITTER_USER_ID="1417748727599534081"
-TWITTER_INSIGHTS_DB_ID="32d7800891008191b853d73aea132065"
 NOTION_API_KEY="..."
+ANTHROPIC_API_KEY="..."  # For classification
+
+# Database IDs
+TWITTER_INSIGHTS_DB_ID="32d7800891008191b853d73aea132065"
+LYRA_BACKLOG_DB_ID="33a780089100812282c7c5ead53149"
+CLAUDE_SETUP_DB_ID="33a7800891008197bad5d1a53afe8efa"
+CONTENT_IDEAS_DB_ID="27fc8e00643a4b9390f7ce8b9a345c62"
+TOOL_EVAL_DB_ID="33a7800891008116b664f18dac2a0e24"
 ```
 
 ## Cron Schedule
 
 ```bash
-# Runs at 7 AM UTC daily
-0 7 * * * /root/lyra-ai/scripts/run-with-openclaw-env.sh /root/lyra-ai/scripts/fetch-twitter-bookmarks.sh && /root/lyra-ai/scripts/run-with-openclaw-env.sh /root/lyra-ai/scripts/bookmarks-to-notion.sh
+# Full pipeline at 7 AM UTC daily: fetch → sync → classify → route
+0 7 * * * /root/lyra-ai/scripts/run-with-openclaw-env.sh /root/lyra-ai/scripts/fetch-twitter-bookmarks.sh && \
+          /root/lyra-ai/scripts/run-with-openclaw-env.sh /root/lyra-ai/scripts/bookmarks-to-notion.sh && \
+          /root/lyra-ai/scripts/run-with-openclaw-env.sh /root/lyra-ai/scripts/classify-and-route.sh
 ```
 
 ## Cost
@@ -74,21 +94,25 @@ NOTION_API_KEY="..."
 ## Quick Commands
 
 ```bash
-# Manual fetch + sync
+# Manual full pipeline
 ssh hetzner "/root/lyra-ai/scripts/run-with-openclaw-env.sh /root/lyra-ai/scripts/fetch-twitter-bookmarks.sh"
 ssh hetzner "/root/lyra-ai/scripts/run-with-openclaw-env.sh /root/lyra-ai/scripts/bookmarks-to-notion.sh"
+ssh hetzner "/root/lyra-ai/scripts/run-with-openclaw-env.sh /root/lyra-ai/scripts/classify-and-route.sh"
 
 # Check cron log
 ssh hetzner "tail -50 /var/log/lyra-twitter-cron.log"
 
-# Check Notion entry count
-ssh hetzner 'source ~/.openclaw/.env && curl -s -X POST "https://api.notion.com/v1/databases/${TWITTER_INSIGHTS_DB_ID}/query" -H "Authorization: Bearer $NOTION_API_KEY" -H "Notion-Version: 2022-06-28" -d "{}" | jq ".results | length"'
+# Check unprocessed count
+ssh hetzner 'source ~/.openclaw/.env && curl -s -X POST "https://api.notion.com/v1/databases/${TWITTER_INSIGHTS_DB_ID}/query" -H "Authorization: Bearer $NOTION_API_KEY" -H "Notion-Version: 2022-06-28" -H "Content-Type: application/json" -d "{\"filter\":{\"property\":\"Needs review\",\"checkbox\":{\"equals\":true}}}" | jq ".results | length"'
+
+# Check Lyra Backlog count
+ssh hetzner 'source ~/.openclaw/.env && curl -s -X POST "https://api.notion.com/v1/databases/${LYRA_BACKLOG_DB_ID}/query" -H "Authorization: Bearer $NOTION_API_KEY" -H "Notion-Version: 2022-06-28" -d "{}" | jq ".results | length"'
 ```
 
-## What's NOT Done Yet
+## What's NOT Done Yet (Track 2)
 
-1. **Lyra synthesis skill execution** — The `twitter-synthesis` skill classifies and generates content bytes, but needs to be triggered via Lyra/OpenClaw (not standalone script yet)
-2. **Downstream automations** — Routes exist in Notion, but triggers to other systems (Lyra backlog, content queue, etc.) need to be wired up
+1. **Content generation pipeline** — Content Ideas DB entries should trigger an end-to-end content generation workflow (drafts, review, publish)
+2. **Lyra synthesis enhancement** — The `twitter-synthesis` skill can generate richer content bytes, but current routing is lightweight classification only
 
 ## Session History
 
@@ -100,3 +124,19 @@ ssh hetzner 'source ~/.openclaw/.env && curl -s -X POST "https://api.notion.com/
 - Set up daily cron
 - Created public GitHub repo with blog post
 - Synced 34 initial bookmarks to Notion
+
+### 2026-04-06: Track 1 Complete (Automated Routing)
+- Created 3 new Notion databases: Lyra Backlog, Claude Setup Ideas, Tool Eval Tracker
+- Built `classify-and-route.sh` that:
+  - Fetches unprocessed bookmarks (Needs review=true, Status=Draft)
+  - Calls Claude API to classify into 8 workflow routes
+  - Routes to 4 destination databases based on primary workflow
+  - Marks items as processed
+- First run classified 20 bookmarks:
+  - 4 → Lyra Backlog (lyra_capability)
+  - 6 → Claude Setup Ideas (work/personal_claude_setup)
+  - 4 → Content Ideas (content_create)
+  - 0 → Tool Eval Tracker (tool_eval)
+  - 6 → stayed in Twitter Insights (research_read_later, market_competitor)
+- Updated cron to run full pipeline
+- Updated GitHub repo and blog

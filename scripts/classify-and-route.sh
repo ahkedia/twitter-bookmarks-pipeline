@@ -71,8 +71,8 @@ echo "$UNPROCESSED" | jq -c '.results[]' | while read -r page; do
 Tweet: ${TWEET_TEXT}
 
 Categories:
-- lyra_capability: Improves AI assistants, automations, skills, MCP tools, Telegram bots
-- work_claude_setup: Improves Claude/Cursor/repo rules/team AI tooling for work
+- lyra_capability: Improves YOUR personal AI assistant (Lyra), OpenClaw gateway, Telegram bots, home automations
+- work_claude_setup: Improves Claude Code/Cursor setup, MCP integrations, repo rules, team AI tooling (includes Figma MCP, design tools MCP, any MCP that would be useful at work)
 - personal_claude_setup: Personal Claude/Cursor setup improvements
 - work_productivity: Work habits, processes, productivity tips (not AI-specific)
 - content_create: Worth turning into a post/thread/article

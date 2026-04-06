@@ -1,0 +1,29 @@
+# Environment and secrets
+.env
+*.env
+.env.*
+
+# Credentials
+*.pem
+*.key
+credentials.json
+
+# Temporary files
+/tmp/
+*.tmp
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Cache
+.cache/
+__pycache__/
+*.pyc

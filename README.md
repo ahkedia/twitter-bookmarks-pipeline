@@ -11,19 +11,22 @@
 Every day at 7am, this pipeline:
 
 1. **Fetches** your X (Twitter) bookmarks from the last 24 hours
-2. **Syncs** them to a Notion database with structured fields
-3. **Classifies** each bookmark into workflow routes (via Lyra AI synthesis)
-4. **Triggers** downstream automations based on the route
+2. **Syncs** them to a Notion database (Twitter Insights) with structured fields
+3. **Classifies** each bookmark using Claude AI into one of 8 workflow routes
+4. **Routes** to destination Notion databases (Lyra Backlog, Claude Setup Ideas, Content Ideas, Tool Eval Tracker)
 
 The magic isn't the fetch — it's the routing. Each bookmark gets classified:
 
-| Workflow | What happens next |
-|----------|-------------------|
-| `lyra_capability` | → Lyra adds to her own improvement backlog |
-| `work_claude_setup` | → Drafts a PR for your team's Cursor rules |
-| `content_create` | → Generates a content byte for your posting queue |
-| `research_read_later` | → Adds to Readwise or research database |
-| `tool_eval` | → Starts a vendor evaluation doc |
+| Workflow | Destination DB | What happens |
+|----------|----------------|--------------|
+| `lyra_capability` | Lyra Backlog | AI assistant improvement ideas |
+| `work_claude_setup` | Claude Setup Ideas | Team Claude/Cursor setup changes |
+| `personal_claude_setup` | Claude Setup Ideas | Personal dev environment tweaks |
+| `content_create` | Content Ideas | Worth turning into a post |
+| `tool_eval` | Tool Eval Tracker | Evaluate a tool or vendor |
+| `work_productivity` | Twitter Insights | Stays for manual review |
+| `research_read_later` | Twitter Insights | Stays for manual review |
+| `market_competitor` | Twitter Insights | Stays for manual review |
 
 You bookmark. Lyra routes. Automations fire.
 
@@ -71,22 +74,25 @@ You bookmark. Lyra routes. Automations fire.
                            │
                            ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│              LYRA AI (twitter-synthesis skill)                   │
+│              CLASSIFY & ROUTE SCRIPT                             │
+│                  classify-and-route.sh                           │
 │                                                                  │
-│  For each bookmark:                                              │
-│  1. Classify into workflow route                                 │
-│  2. Extract themes                                               │
-│  3. Generate content byte (if content_create)                    │
-│  4. Update Notion with classification                            │
-│  5. Trigger downstream automation                                │
+│  For each unprocessed bookmark (Needs review = true):            │
+│  1. Call Claude API to classify into workflow route              │
+│  2. Update Twitter Insights with classification                  │
+│  3. Route to destination database based on primary workflow      │
+│  4. Mark as processed                                            │
 └──────────────────────────┬──────────────────────────────────────┘
                            │
-           ┌───────────────┼───────────────┐
-           ▼               ▼               ▼
-    ┌──────────┐    ┌──────────┐    ┌──────────┐
-    │  Lyra    │    │  Claude  │    │ Content  │
-    │ Backlog  │    │  Setup   │    │  Queue   │
-    └──────────┘    └──────────┘    └──────────┘
+       ┌───────────────────┼───────────────────┬───────────────────┐
+       ▼                   ▼                   ▼                   ▼
+┌────────────┐      ┌────────────┐      ┌────────────┐      ┌────────────┐
+│   Lyra     │      │   Claude   │      │  Content   │      │   Tool     │
+│  Backlog   │      │   Setup    │      │   Ideas    │      │   Eval     │
+│            │      │   Ideas    │      │            │      │  Tracker   │
+│ lyra_      │      │ work_/     │      │ content_   │      │ tool_eval  │
+│ capability │      │ personal_  │      │ create     │      │            │
+└────────────┘      └────────────┘      └────────────┘      └────────────┘
 ```
 
 ---
@@ -144,21 +150,31 @@ TWITTER_CLIENT_SECRET="..."
 TWITTER_REFRESH_TOKEN="..."
 TWITTER_USER_ID="..."  # numeric ID from tweeterid.com
 NOTION_API_KEY="secret_..."
-TWITTER_INSIGHTS_DB_ID="..."  # 32-char database ID
+ANTHROPIC_API_KEY="sk-ant-..."  # For classification
+
+# Database IDs (32-char, from Notion URL)
+TWITTER_INSIGHTS_DB_ID="..."    # Source: all bookmarks land here
+LYRA_BACKLOG_DB_ID="..."        # Destination: lyra_capability
+CLAUDE_SETUP_DB_ID="..."        # Destination: work_/personal_claude_setup
+CONTENT_IDEAS_DB_ID="..."       # Destination: content_create
+TOOL_EVAL_DB_ID="..."           # Destination: tool_eval
 ```
 
 ### 5. Test
 
 ```bash
-./scripts/fetch-twitter-bookmarks.sh
-./scripts/bookmarks-to-notion.sh
+./scripts/fetch-twitter-bookmarks.sh      # Fetch from X API
+./scripts/bookmarks-to-notion.sh          # Sync to Twitter Insights
+./scripts/classify-and-route.sh           # Classify and route to destination DBs
 ```
 
 ### 6. Add to cron
 
 ```bash
-# Fetch + sync daily at 7am UTC
-0 7 * * * /path/to/scripts/fetch-twitter-bookmarks.sh && /path/to/scripts/bookmarks-to-notion.sh
+# Full pipeline daily at 7am UTC
+0 7 * * * /path/to/scripts/fetch-twitter-bookmarks.sh && \
+          /path/to/scripts/bookmarks-to-notion.sh && \
+          /path/to/scripts/classify-and-route.sh
 ```
 
 ---
@@ -191,9 +207,10 @@ The classification uses:
 | Component | Cost |
 |-----------|------|
 | X API (Pay-Per-Use) | ~$0.01-0.03/day |
+| Anthropic API (classification) | ~$0.01-0.05/day |
 | Notion API | Free |
 | VPS (optional) | €6/month |
-| **Total** | **< $5/month** |
+| **Total** | **< $10/month** |
 
 ---
 
@@ -202,7 +219,8 @@ The classification uses:
 ```
 scripts/
 ├── fetch-twitter-bookmarks.sh    # Fetches bookmarks via X API
-├── bookmarks-to-notion.sh        # Syncs JSON to Notion
+├── bookmarks-to-notion.sh        # Syncs JSON to Twitter Insights DB
+├── classify-and-route.sh         # Classifies & routes to destination DBs
 ├── get-twitter-oauth-refresh-token.sh  # One-time OAuth setup
 └── run-with-openclaw-env.sh      # Loads env vars for cron
 

@@ -46,7 +46,7 @@ The bookmark button should be an **input device**, not a storage endpoint.
 
 **7:02am next morning.** Lyra's fetch script pulls my last 24 hours of bookmarks.
 
-**7:03am.** The synthesis skill classifies it:
+**7:03am.** The classify-and-route script calls Claude API to classify it:
 
 > **Primary workflow:** `lyra_capability`  
 > **Confidence:** High  
@@ -56,11 +56,9 @@ The bookmark button should be an **input device**, not a storage endpoint.
 - Full tweet text
 - Author and URL
 - Classification: `lyra_capability`
-- Status: Draft
-- A generated "content byte" if it's worth posting about
-- Flag: "Needs review" (only if confidence is low)
+- Status: Processed
 
-**7:05am.** Because it's tagged `lyra_capability`, it also gets added to Lyra's improvement backlog. On Sunday, my weekly synthesis includes: "3 new capability ideas from Twitter this week."
+**7:05am.** Because it's tagged `lyra_capability`, it automatically gets routed to my **Lyra Backlog** database. On Sunday, my weekly synthesis includes: "3 new capability ideas from Twitter this week."
 
 I didn't do anything except bookmark.
 
@@ -110,26 +108,27 @@ When confident, the system routes silently. When uncertain, it sets `needs_revie
                                 ┌─────────────────────┐
                                 │  Notion: Twitter    │
                                 │  Insights DB        │
-                                │  (18 fields)        │
                                 └──────────┬──────────┘
                                            │
                                            ▼
                                 ┌─────────────────────┐
-                                │  Lyra: twitter-     │
-                                │  synthesis skill    │
+                                │  classify-and-      │
+                                │  route.sh           │
                                 │                     │
+                                │  • Claude API call  │
                                 │  • Classify route   │
-                                │  • Generate byte    │
-                                │  • Trigger actions  │
+                                │  • Route to dest DB │
                                 └──────────┬──────────┘
                                            │
-              ┌────────────────────────────┼────────────────────────────┐
-              ▼                            ▼                            ▼
-    ┌─────────────────┐          ┌─────────────────┐          ┌─────────────────┐
-    │ lyra_capability │          │ content_create  │          │ tool_eval       │
-    │ → Improvement   │          │ → Content queue │          │ → Eval tracker  │
-    │   backlog       │          │ + draft byte    │          │                 │
-    └─────────────────┘          └─────────────────┘          └─────────────────┘
+      ┌────────────────┬───────────────────┼───────────────────┬────────────────┐
+      ▼                ▼                   ▼                   ▼                ▼
+┌───────────┐   ┌───────────┐       ┌───────────┐       ┌───────────┐   ┌───────────┐
+│   Lyra    │   │  Claude   │       │  Content  │       │   Tool    │   │ (stays in │
+│  Backlog  │   │  Setup    │       │   Ideas   │       │   Eval    │   │ Insights) │
+│           │   │   Ideas   │       │           │       │  Tracker  │   │           │
+└───────────┘   └───────────┘       └───────────┘       └───────────┘   └───────────┘
+lyra_capability  work_/personal_    content_create      tool_eval        others
+                 claude_setup
 ```
 
 **Cost:** ~$0.01-0.03/day for X API (pay-per-use), Notion free, VPS €6/month.

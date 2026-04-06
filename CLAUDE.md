@@ -17,8 +17,21 @@ A pipeline that fetches X (Twitter) bookmarks, syncs them to Notion, classifies 
 | `fetch-twitter-bookmarks.sh` | OAuth2 fetch, token rotation, date filter |
 | `bookmarks-to-notion.sh` | JSON → Notion sync with deduplication |
 | `classify-and-route.sh` | Claude API classification + DB routing |
+| `apply-claude-setup.sh` | Auto-apply Claude setup improvements |
 | `get-twitter-oauth-refresh-token.sh` | One-time OAuth setup |
 | `run-with-openclaw-env.sh` | Env loader for cron |
+
+### Claude Setup Automation
+
+**Work scope items:**
+- Email sent via Himalaya to your personal email
+- You manually forward to work email, download, and apply
+
+**Personal scope items:**
+- Committed to git sync repo (`/root/claude-setup-sync`)
+- Mac auto-pulls every 15 min via launchd
+- macOS notification when new items arrive
+- Files land in `~/.claude/setup-sync/pending/`
 
 ### Notion Databases
 
@@ -60,10 +73,19 @@ TOOL_EVAL_DB_ID="33a7800891008116b664f18dac2a0e24"
 ## Cron Schedule
 
 ```bash
-# Full pipeline at 7 AM UTC daily: fetch → sync → classify → route
-0 7 * * * /root/lyra-ai/scripts/run-with-openclaw-env.sh /root/lyra-ai/scripts/fetch-twitter-bookmarks.sh && \
-          /root/lyra-ai/scripts/run-with-openclaw-env.sh /root/lyra-ai/scripts/bookmarks-to-notion.sh && \
-          /root/lyra-ai/scripts/run-with-openclaw-env.sh /root/lyra-ai/scripts/classify-and-route.sh
+# Full pipeline at 7 AM UTC daily: fetch → sync → classify → route → apply
+0 7 * * * .../fetch-twitter-bookmarks.sh && \
+          .../bookmarks-to-notion.sh && \
+          .../classify-and-route.sh && \
+          .../apply-claude-setup.sh
+```
+
+## Mac Launchd Job
+
+```bash
+# Runs every 15 minutes, auto-pulls git sync repo
+# Sends macOS notification when new items arrive
+~/Library/LaunchAgents/com.akash.claude-setup-sync.plist
 ```
 
 ## Cost
@@ -140,3 +162,15 @@ ssh hetzner 'source ~/.openclaw/.env && curl -s -X POST "https://api.notion.com/
   - 6 → stayed in Twitter Insights (research_read_later, market_competitor)
 - Updated cron to run full pipeline
 - Updated GitHub repo and blog
+
+### 2026-04-06: Claude Setup Automation
+- Built `apply-claude-setup.sh` for downstream actions on Ready items
+- **Work scope:** Email via Himalaya → forward to work email → apply manually
+- **Personal scope:** 
+  - VPS commits to private git repo (`claude-setup-sync`)
+  - Mac auto-pulls via launchd every 15 min
+  - macOS notification on new items
+  - Files appear in `~/.claude/setup-sync/pending/`
+- Fixed Himalaya config (disabled save-copy to avoid IMAP folder error)
+- Improved classification: MCP tools now route to work_claude_setup
+- Added Status options: Ready, Sent, Applied, Rejected

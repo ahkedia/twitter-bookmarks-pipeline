@@ -24,8 +24,10 @@ A pipeline that fetches X (Twitter) bookmarks, syncs them to Notion, classifies 
 ### Claude Setup Automation
 
 **Work scope items:**
-- Email sent via Himalaya to your personal email
-- You manually forward to work email, download, and apply
+- Direct email sending is disabled
+- Work scope creates draft emails only (never send directly)
+- Optional draft folder override: `EMAIL_DRAFTS_FOLDER` (default `Drafts`)
+- You manually review/forward/apply from drafts
 
 **Personal scope items:**
 - Committed to git sync repo (`/root/claude-setup-sync`)
@@ -66,7 +68,8 @@ ANTHROPIC_API_KEY="..."  # For classification
 TWITTER_INSIGHTS_DB_ID="32d7800891008191b853d73aea132065"
 LYRA_BACKLOG_DB_ID="33a780089100812282c7c5ead53149"
 CLAUDE_SETUP_DB_ID="33a7800891008197bad5d1a53afe8efa"
-CONTENT_IDEAS_DB_ID="27fc8e00643a4b9390f7ce8b9a345c62"
+# Content Topic Pool (canonical). Legacy: CONTENT_IDEAS_DB_ID still works as fallback.
+CONTENT_TOPIC_POOL_DB_ID="33f780089100812aacaec0a61d8caf3a"
 TOOL_EVAL_DB_ID="33a7800891008116b664f18dac2a0e24"
 ```
 
@@ -174,3 +177,8 @@ ssh hetzner 'source ~/.openclaw/.env && curl -s -X POST "https://api.notion.com/
 - Fixed Himalaya config (disabled save-copy to avoid IMAP folder error)
 - Improved classification: MCP tools now route to work_claude_setup
 - Added Status options: Ready, Sent, Applied, Rejected
+
+### 2026-04-08: Email Safety Hard Guard
+- Added hard policy: no direct email sending
+- `apply-claude-setup.sh` now creates drafts only for work-scope items
+- Work items are marked terminal after draft creation to avoid duplicate drafts

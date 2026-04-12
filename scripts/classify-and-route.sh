@@ -11,7 +11,8 @@ TWITTER_INSIGHTS_DB_ID="${TWITTER_INSIGHTS_DB_ID:-}"
 LYRA_BACKLOG_DB_ID="${LYRA_BACKLOG_DB_ID:-}"
 CLAUDE_SETUP_DB_ID="${CLAUDE_SETUP_DB_ID:-}"
 TOOL_EVAL_DB_ID="${TOOL_EVAL_DB_ID:-}"
-CONTENT_IDEAS_DB_ID="${CONTENT_IDEAS_DB_ID:-}"
+# Bookmark → content pipeline: rows go to Content Topic Pool (merged former Content Ideas DB).
+CONTENT_TOPIC_POOL_DB_ID="${CONTENT_TOPIC_POOL_DB_ID:-${CONTENT_IDEAS_DB_ID:-}}"
 
 if [[ -z "$NOTION_API_KEY" || -z "$ANTHROPIC_API_KEY" || -z "$TWITTER_INSIGHTS_DB_ID" ]]; then
   echo "Missing required env vars: NOTION_API_KEY, ANTHROPIC_API_KEY, TWITTER_INSIGHTS_DB_ID"
@@ -139,8 +140,8 @@ Respond in exactly this JSON format:
       TARGET_DB_NAME="Tool Eval Tracker"
       ;;
     content_create)
-      TARGET_DB="$CONTENT_IDEAS_DB_ID"
-      TARGET_DB_NAME="Content Ideas"
+      TARGET_DB="$CONTENT_TOPIC_POOL_DB_ID"
+      TARGET_DB_NAME="Content Topic Pool"
       ;;
     *)
       # work_productivity, research_read_later, market_competitor stay in Twitter Insights
@@ -151,13 +152,22 @@ Respond in exactly this JSON format:
   if [[ -n "$TARGET_DB" ]]; then
     echo "  Routing to: $TARGET_DB_NAME"
     
-    # Check if already exists in target DB (by URL)
-    EXISTING=$(curl -s -X POST "https://api.notion.com/v1/databases/${TARGET_DB}/query" \
-      -H "Authorization: Bearer ${NOTION_API_KEY}" \
-      -H "Notion-Version: 2022-06-28" \
-      -H "Content-Type: application/json" \
-      -d "{\"filter\":{\"property\":\"Source\",\"url\":{\"equals\":\"${TWEET_URL}\"}}}" \
-      | jq '.results | length')
+    # Check if already exists in target DB (by URL). Topic Pool uses "Source Reference"; other DBs use "Source".
+    if [[ "$PRIMARY_WORKFLOW" == "content_create" ]]; then
+      EXISTING=$(curl -s -X POST "https://api.notion.com/v1/databases/${TARGET_DB}/query" \
+        -H "Authorization: Bearer ${NOTION_API_KEY}" \
+        -H "Notion-Version: 2022-06-28" \
+        -H "Content-Type: application/json" \
+        -d "{\"filter\":{\"property\":\"Source Reference\",\"url\":{\"equals\":\"${TWEET_URL}\"}}}" \
+        | jq '.results | length')
+    else
+      EXISTING=$(curl -s -X POST "https://api.notion.com/v1/databases/${TARGET_DB}/query" \
+        -H "Authorization: Bearer ${NOTION_API_KEY}" \
+        -H "Notion-Version: 2022-06-28" \
+        -H "Content-Type: application/json" \
+        -d "{\"filter\":{\"property\":\"Source\",\"url\":{\"equals\":\"${TWEET_URL}\"}}}" \
+        | jq '.results | length')
+    fi
     
     if (( EXISTING > 0 )); then
       echo "  Already exists in $TARGET_DB_NAME, skipping"
@@ -188,7 +198,9 @@ Respond in exactly this JSON format:
           ;;
         work_claude_setup|personal_claude_setup)
           SCOPE="work"
+          STATUS="Idea"
           [[ "$PRIMARY_WORKFLOW" == "personal_claude_setup" ]] && SCOPE="personal"
+          [[ "$SCOPE" == "work" ]] && STATUS="Ready"
           curl -s -X POST "https://api.notion.com/v1/pages" \
             -H "Authorization: Bearer ${NOTION_API_KEY}" \
             -H "Notion-Version: 2022-06-28" \
@@ -198,6 +210,7 @@ Respond in exactly this JSON format:
               --arg title "$TITLE" \
               --arg url "$TWEET_URL" \
               --arg scope "$SCOPE" \
+              --arg status "$STATUS" \
               --arg notes "$RATIONALE" \
               '{
                 parent: {database_id: $db},
@@ -205,7 +218,7 @@ Respond in exactly this JSON format:
                   "Idea": {title: [{text: {content: $title}}]},
                   "Source": {url: $url},
                   "Scope": {select: {name: $scope}},
-                  "Status": {select: {name: "Idea"}},
+                  "Status": {select: {name: $status}},
                   "Notes": {rich_text: [{text: {content: $notes}}]},
                   "From Bookmark": {checkbox: true}
                 }
@@ -235,26 +248,31 @@ Respond in exactly this JSON format:
           echo "  Created in Tool Eval Tracker"
           ;;
         content_create)
+          WEEK=$(date +%Y-%m-%d)
+          TOPIC_TITLE="$TITLE"
+          [[ -z "$TOPIC_TITLE" || "$TOPIC_TITLE" == "null" ]] && TOPIC_TITLE="${TWEET_TEXT:0:200}"
           curl -s -X POST "https://api.notion.com/v1/pages" \
             -H "Authorization: Bearer ${NOTION_API_KEY}" \
             -H "Notion-Version: 2022-06-28" \
             -H "Content-Type: application/json" \
             -d "$(jq -n \
               --arg db "$TARGET_DB" \
-              --arg title "$TITLE" \
+              --arg title "$TOPIC_TITLE" \
               --arg url "$TWEET_URL" \
-              --arg summary "$TWEET_TEXT" \
+              --arg week "$WEEK" \
               '{
                 parent: {database_id: $db},
                 properties: {
-                  "Idea": {title: [{text: {content: $title}}]},
-                  "Link": {url: $url},
-                  "Status": {select: {name: "Idea"}},
-                  "Rough Notes": {rich_text: [{text: {content: ($summary | .[0:2000])}}]},
-                  "From Bookmark": {checkbox: true}
+                  "Topic": {title: [{text: {content: $title}}]},
+                  "Source": {select: {name: "Twitter"}},
+                  "Domain": {select: {name: "General"}},
+                  "Score": {number: 6},
+                  "Status": {select: {name: "Candidate"}},
+                  "Week": {date: {start: $week}},
+                  "Source Reference": {url: $url}
                 }
               }')" > /dev/null
-          echo "  Created in Content Ideas"
+          echo "  Created in Content Topic Pool (Candidate)"
           ;;
       esac
     fi

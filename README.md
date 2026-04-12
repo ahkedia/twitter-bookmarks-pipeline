@@ -156,7 +156,7 @@ ANTHROPIC_API_KEY="sk-ant-..."  # For classification
 TWITTER_INSIGHTS_DB_ID="..."    # Source: all bookmarks land here
 LYRA_BACKLOG_DB_ID="..."        # Destination: lyra_capability
 CLAUDE_SETUP_DB_ID="..."        # Destination: work_/personal_claude_setup
-CONTENT_IDEAS_DB_ID="..."       # Destination: content_create
+CONTENT_TOPIC_POOL_DB_ID="..." # Destination: content_create → Content Topic Pool (or legacy CONTENT_IDEAS_DB_ID)
 TOOL_EVAL_DB_ID="..."           # Destination: tool_eval
 ```
 
@@ -199,6 +199,20 @@ The classification uses:
 - Author context
 - Your personal context (from SOUL.md / MEMORY.md)
 - Historical patterns
+
+---
+
+## Safety Policy: Email Approval
+
+- Direct email sending is disabled.
+- Work-scope Claude setup items create draft emails only (never send directly).
+- Optional: override draft folder with `EMAIL_DRAFTS_FOLDER` (default: `Drafts`).
+
+```bash
+EMAIL_DRAFTS_FOLDER="Drafts" /root/lyra-ai/scripts/run-with-openclaw-env.sh /root/lyra-ai/scripts/apply-claude-setup.sh
+```
+
+- Never add direct-send behavior to cron.
 
 ---
 

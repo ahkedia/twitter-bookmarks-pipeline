@@ -11,24 +11,26 @@ A pipeline that fetches X (Twitter) bookmarks, syncs them to Notion, classifies 
 
 ## Key Files
 
-### Scripts (on VPS at `/root/lyra-ai/scripts/`)
+> **IMPORTANT (2026-04-22):** The production pipeline is the single Python script
+> `twitter_bookmarks.py` in the `lyra-ai` repo. The bash scripts in this repo's
+> `scripts/` directory are archived (see `scripts/ARCHIVED.md`) — they were a
+> bridge during the bash→Python migration and are no longer run.
+
+### Production scripts (in `lyra-ai` repo at `/root/lyra-ai/scripts/` on VPS)
 | File | Purpose |
 |------|---------|
-| `fetch-twitter-bookmarks.sh` | OAuth2 fetch, token rotation, date filter |
-| `bookmarks-to-notion.sh` | JSON → Notion sync with deduplication |
-| `classify-and-route.sh` | Claude API classification (multi-label) + fan-out to all matched DBs + wiki stub + audit log |
-| `write-bookmark-to-wiki.sh` | Writes a markdown stub to `personal-kb-raw/raw/bookmarks/` for `content_create` routes |
-| `learn-exemplars.sh` | Harvests manual overrides (Correct route column) into classifier exemplars |
-| `apply-claude-setup.sh` | Auto-apply Claude setup improvements |
+| `twitter_bookmarks.py` | Unified: fetch → classify (multi-label) → write Twitter Insights → fan out to destination DBs → write wiki stub → append audit log |
+| `learn_exemplars.py` | Nightly: harvest manual "Correct route" overrides into classifier exemplars |
+| `classifier-exemplars.json` | Labeled exemplars injected into the Sonnet prompt (grown by `learn_exemplars.py`) |
+| `fetch-twitter-bookmarks.sh` | Legacy bash fetcher (kept for manual debug only — not on cron) |
 | `get-twitter-oauth-refresh-token.sh` | One-time OAuth setup |
-| `run-with-openclaw-env.sh` | Env loader for cron |
 
-### Config
-- `config/classifier-exemplars.json` — labeled exemplars injected into the classifier prompt. Grows via `learn-exemplars.sh`.
-- `config/field-mapping.md` — canonical field names per destination DB + required schema additions in Twitter Insights.
+### Docs in THIS repo
+- `config/field-mapping.md` — canonical field names per destination DB + required Twitter Insights schema additions.
+- `README.md` / `CLAUDE.md` — project context.
 
-### Logs
-- `logs/classification-log.csv` — every classification decision (timestamp, page_id, url, title, primary, secondary, confidence, rationale, wiki stub, routed DBs). Review weekly.
+### Audit log (on VPS)
+- `/var/log/lyra-classification.csv` — every classification decision: timestamp, tweet_id, url, title, primary, secondary, confidence, rationale, wiki_stub, routed_to. Review weekly.
 
 ## Multi-label Routing (2026-04-22)
 The classifier now returns `primary_workflow` + `secondary_workflows[]`. A single bookmark fans out to every matched destination DB (e.g. `content_create` + `tool_eval` creates rows in both Content Topic Pool AND Tool Eval Tracker). Dedup is per-DB by source URL.
@@ -99,17 +101,19 @@ CONTENT_TOPIC_POOL_DB_ID="33f780089100812aacaec0a61d8caf3a"
 TOOL_EVAL_DB_ID="33a7800891008116b664f18dac2a0e24"
 ```
 
-## Cron Schedule
+## Cron Schedule (VPS)
 
 ```bash
-# Full pipeline at 7 AM UTC daily: fetch → sync → classify → route → apply
-0 7 * * * .../fetch-twitter-bookmarks.sh && \
-          .../bookmarks-to-notion.sh && \
-          .../classify-and-route.sh && \
-          .../apply-claude-setup.sh
+# Daily 7 AM UTC: unified fetch + classify + write + route + wiki
+0 7 * * * /root/lyra-ai/scripts/cron-task-runner.sh lyra-twitter 900 2 \
+          /root/lyra-ai/scripts/run-with-openclaw-env.sh \
+          /usr/bin/python3 /root/lyra-ai/scripts/twitter_bookmarks.py \
+          >> /var/log/lyra-twitter-cron.log 2>&1
 
-# Learn from manual overrides nightly at 3 AM UTC
-0 3 * * * .../run-with-openclaw-env.sh .../learn-exemplars.sh
+# Nightly 3 AM UTC: learn from manual "Correct route" overrides
+0 3 * * * /root/lyra-ai/scripts/run-with-openclaw-env.sh \
+          /usr/bin/python3 /root/lyra-ai/scripts/learn_exemplars.py \
+          >> /var/log/lyra-learn.log 2>&1
 ```
 
 ## Mac Launchd Job

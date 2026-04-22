@@ -16,10 +16,36 @@ A pipeline that fetches X (Twitter) bookmarks, syncs them to Notion, classifies 
 |------|---------|
 | `fetch-twitter-bookmarks.sh` | OAuth2 fetch, token rotation, date filter |
 | `bookmarks-to-notion.sh` | JSON → Notion sync with deduplication |
-| `classify-and-route.sh` | Claude API classification + DB routing |
+| `classify-and-route.sh` | Claude API classification (multi-label) + fan-out to all matched DBs + wiki stub + audit log |
+| `write-bookmark-to-wiki.sh` | Writes a markdown stub to `personal-kb-raw/raw/bookmarks/` for `content_create` routes |
+| `learn-exemplars.sh` | Harvests manual overrides (Correct route column) into classifier exemplars |
 | `apply-claude-setup.sh` | Auto-apply Claude setup improvements |
 | `get-twitter-oauth-refresh-token.sh` | One-time OAuth setup |
 | `run-with-openclaw-env.sh` | Env loader for cron |
+
+### Config
+- `config/classifier-exemplars.json` — labeled exemplars injected into the classifier prompt. Grows via `learn-exemplars.sh`.
+- `config/field-mapping.md` — canonical field names per destination DB + required schema additions in Twitter Insights.
+
+### Logs
+- `logs/classification-log.csv` — every classification decision (timestamp, page_id, url, title, primary, secondary, confidence, rationale, wiki stub, routed DBs). Review weekly.
+
+## Multi-label Routing (2026-04-22)
+The classifier now returns `primary_workflow` + `secondary_workflows[]`. A single bookmark fans out to every matched destination DB (e.g. `content_create` + `tool_eval` creates rows in both Content Topic Pool AND Tool Eval Tracker). Dedup is per-DB by source URL.
+
+## Wiki Integration (2026-04-22)
+When a bookmark routes to `content_create`, a markdown stub is written to `$PERSONAL_KB_PATH/raw/bookmarks/YYYY-MM-DD-<slug>.md` with frontmatter (tweet_url, primary_workflow, secondary_workflows, status=idea). This is the bridge to downstream workflows (content-engine, lenny extractor) that already read from the wiki.
+
+Env vars:
+- `PERSONAL_KB_PATH` — defaults to `/root/projects/personal-kb-raw` on VPS, `~/AI/projects/personal-kb-raw` on Mac
+- `WIKI_GIT_AUTOCOMMIT=true` — optional, auto-commit+push after write
+
+## Required Twitter Insights schema additions
+See `config/field-mapping.md`. Add these columns in Notion (one-time manual setup):
+- `Workflow` (multi_select) — all matched workflows
+- `Correct route` (select) — **manual override** when classifier is wrong
+- `Exemplar harvested` (checkbox) — set by learner
+- `Wiki stub path` (rich_text) — populated on content_create routes
 
 ### Claude Setup Automation
 
@@ -81,6 +107,9 @@ TOOL_EVAL_DB_ID="33a7800891008116b664f18dac2a0e24"
           .../bookmarks-to-notion.sh && \
           .../classify-and-route.sh && \
           .../apply-claude-setup.sh
+
+# Learn from manual overrides nightly at 3 AM UTC
+0 3 * * * .../run-with-openclaw-env.sh .../learn-exemplars.sh
 ```
 
 ## Mac Launchd Job
